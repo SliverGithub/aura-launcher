@@ -1,0 +1,9 @@
+target/
+docs/
+.docs/
+agents/
+tests/s
+marketing/
+.vscode/
+result
+result-*
