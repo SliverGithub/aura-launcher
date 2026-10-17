@@ -921,7 +921,11 @@ impl App {
         {
             return;
         }
-        if self.market_sel.saturating_add(4) >= self.market_rows.len() {
+        // Prefetch while there is still a third of the loaded results left:
+        // with 60 rows loaded, start the next request around row 40 instead of
+        // waiting for the selection to hit the very last entry.
+        let prefetch_at = self.market_rows.len().saturating_mul(2) / 3;
+        if self.market_sel >= prefetch_at {
             self.fetch_market_search(false);
         }
     }
