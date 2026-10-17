@@ -51,8 +51,8 @@ impl SteamClient {
 
     /// Send a direct chat message to a friend (by SteamID64).
     pub async fn send_chat_message(&self, target: u64, message: String) -> Result<SentMessage> {
-        let target = SteamID::try_from(target)
-            .map_err(|_| anyhow!("invalid target SteamID: {target}"))?;
+        let target =
+            SteamID::try_from(target).map_err(|_| anyhow!("invalid target SteamID: {target}"))?;
         let result = self
             .chat_client()?
             .send_message(target, message)
@@ -64,8 +64,7 @@ impl SteamClient {
         })
     }
 
-    /// Fetch recent messages exchanged with a friend (by SteamID64), in the order
-    /// Steam returns them (most-recent first).
+    /// Fetch recent messages exchanged with a friend (by SteamID64), oldest first.
     pub async fn recent_chat_messages(&self, target: u64, count: u32) -> Result<Vec<ChatMessage>> {
         let connection = self.require_connection()?;
         let me = u64::from(connection.steam_id());
@@ -85,7 +84,7 @@ impl SteamClient {
             .await
             .map_err(|e| anyhow!("failed to fetch recent messages: {e}"))?;
 
-        let messages = resp
+        let mut messages: Vec<ChatMessage> = resp
             .messages
             .into_iter()
             .map(|m| {
@@ -98,6 +97,9 @@ impl SteamClient {
                 }
             })
             .collect();
+        // Steam returns recent messages newest-first; callers (and the TUI)
+        // expect chronological order.
+        messages.reverse();
         Ok(messages)
     }
 }
