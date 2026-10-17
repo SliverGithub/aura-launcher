@@ -897,7 +897,13 @@ impl App {
         }
         self.market_loading = true;
         let start = self.market_start;
-        let count = self.market_batch_size();
+        // Show the first results immediately; the rest of the viewport-sized
+        // buffer is prefetched in the background by the tick loop.
+        let count = if replace {
+            10
+        } else {
+            self.market_batch_size()
+        };
         let query = self.market_query.trim().to_string();
         let mut args = vec!["market".to_string(), "search".to_string()];
         if !query.is_empty() {
@@ -921,11 +927,12 @@ impl App {
         {
             return;
         }
-        // Prefetch while there is still a third of the loaded results left:
-        // with 60 rows loaded, start the next request around row 40 instead of
-        // waiting for the selection to hit the very last entry.
-        let prefetch_at = self.market_rows.len().saturating_mul(2) / 3;
-        if self.market_sel >= prefetch_at {
+        // Keep a two-screen buffer ahead of the selection. The first page is
+        // only 10 rows, so this also chains a few prefetches to fill the view
+        // and stay ahead while the user scrolls.
+        let target_ahead = self.market_batch_size().saturating_mul(2).max(30);
+        let ahead = self.market_rows.len().saturating_sub(self.market_sel);
+        if ahead < target_ahead {
             self.fetch_market_search(false);
         }
     }

@@ -435,27 +435,28 @@ pub async fn market_search(
     start: u32,
     count: u32,
 ) -> Result<(u32, Vec<MarketSearchResult>)> {
-    let mut results = Vec::new();
-    let mut offset = start;
-    let mut total = 0u32;
-    let mut remaining = count as usize;
+    let chunks = count.div_ceil(10).max(1);
+    let requests = (0..chunks).map(|index| {
+        let offset = start.saturating_add(index * 10);
+        let take = count.saturating_sub(index * 10).min(10);
+        market_search_once(query, app_id, offset, take)
+    });
+    let pages = futures_util::future::join_all(requests).await;
 
-    while remaining > 0 {
-        let take = remaining.min(10) as u32;
-        let (page_total, page) = market_search_once(query, app_id, offset, take).await?;
+    let mut total = 0u32;
+    let mut results = Vec::new();
+    for page in pages {
+        let (page_total, page_results) = page?;
         if total == 0 {
             total = page_total;
         }
-        if page.is_empty() {
-            break;
-        }
-        let received = page.len();
-        results.extend(page);
-        offset = offset.saturating_add(received as u32);
-        remaining = remaining.saturating_sub(received);
-        if (total > 0 && offset >= total) || received < 10 {
-            break;
-        }
+        results.extend(page_results);
+    }
+    if total > 0 {
+        let available = total.saturating_sub(start) as usize;
+        results.truncate(available.min(count as usize));
+    } else {
+        results.truncate(count as usize);
     }
     Ok((total, results))
 }
