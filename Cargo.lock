@@ -298,6 +298,7 @@ dependencies = [
  "directories",
  "filetime",
  "flate2",
+ "futures-util",
  "hex",
  "image",
  "keyring",
