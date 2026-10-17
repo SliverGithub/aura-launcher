@@ -417,6 +417,10 @@ pub struct GameConfig {
     pub steam_runtime_policy: String,
     #[serde(default)]
     pub steam_prefix_mode: String,
+    #[serde(default)]
+    pub steam_launch_options: Option<String>,
+    #[serde(default)]
+    pub steam_compat_tool: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

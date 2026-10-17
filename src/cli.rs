@@ -1260,4 +1260,23 @@ pub(crate) struct GameConfigArgs {
     /// prefix directly; `per-game` copies Steam into the game's own prefix.
     #[arg(short = 'm', long, value_name = "shared|per-game")]
     pub(crate) steam_prefix_mode: Option<SteamPrefixModeArg>,
+    /// Write this game's Steam launch options (`localconfig.vdf`). Empty clears.
+    #[arg(
+        long,
+        value_name = "TEXT",
+        conflicts_with = "clear_steam_launch_options"
+    )]
+    pub(crate) steam_launch_options: Option<String>,
+    /// Clear this game's Steam launch options.
+    #[arg(long)]
+    pub(crate) clear_steam_launch_options: bool,
+    /// Write this game's Steam compatibility tool (e.g. `proton_10`). Empty clears.
+    #[arg(long, value_name = "TOOL", conflicts_with = "clear_steam_compat_tool")]
+    pub(crate) steam_compat_tool: Option<String>,
+    /// Clear this game's Steam compatibility-tool mapping.
+    #[arg(long)]
+    pub(crate) clear_steam_compat_tool: bool,
+    /// Stop Steam around Steam-settings writes and restart it afterward.
+    #[arg(long)]
+    pub(crate) restart_steam: bool,
 }

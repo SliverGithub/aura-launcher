@@ -199,6 +199,8 @@ pub enum ManageMode {
     Branch,
     Script,
     LaunchOptions,
+    SteamLaunch,
+    SteamTool,
 }
 
 pub struct Manage {
@@ -1017,7 +1019,7 @@ impl App {
             return 0;
         };
         match manage.mode {
-            ManageMode::Main => 12,
+            ManageMode::Main => 14,
             ManageMode::Proton => {
                 1 + manage
                     .protons
@@ -1028,7 +1030,10 @@ impl App {
             ManageMode::Platform | ManageMode::Runner | ManageMode::Runtime => 3,
             ManageMode::Prefix => 2,
             ManageMode::Branch => manage.branches.len().max(1),
-            ManageMode::Script | ManageMode::LaunchOptions => 0,
+            ManageMode::Script
+            | ManageMode::LaunchOptions
+            | ManageMode::SteamLaunch
+            | ManageMode::SteamTool => 0,
         }
     }
 
@@ -1098,6 +1103,29 @@ impl App {
                 }
                 _ => {}
             },
+            ManageMode::SteamLaunch | ManageMode::SteamTool => match key.code {
+                KeyCode::Esc => {
+                    if let Some(manage) = &mut self.manage {
+                        manage.mode = ManageMode::Main;
+                        manage.sel = 0;
+                    }
+                }
+                KeyCode::Enter => {
+                    let launch = mode == ManageMode::SteamLaunch;
+                    self.manage_save_steam(launch);
+                }
+                KeyCode::Backspace => {
+                    if let Some(manage) = &mut self.manage {
+                        manage.prompt.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(manage) = &mut self.manage {
+                        manage.prompt.push(c);
+                    }
+                }
+                _ => {}
+            },
             ManageMode::LaunchOptions => match key.code {
                 KeyCode::Esc => {
                     if let Some(manage) = &mut self.manage {
@@ -1148,6 +1176,8 @@ impl App {
             5 => Some(ManageMode::Script),
             6 => Some(ManageMode::Branch),
             7 => Some(ManageMode::LaunchOptions),
+            8 => Some(ManageMode::SteamLaunch),
+            9 => Some(ManageMode::SteamTool),
             _ => None,
         };
         if let Some(mode) = mode {
@@ -1170,24 +1200,36 @@ impl App {
                         .as_ref()
                         .and_then(|config| config.launch_script.clone())
                         .unwrap_or_default();
+                } else if mode == ManageMode::SteamLaunch {
+                    manage.prompt = manage
+                        .config
+                        .as_ref()
+                        .and_then(|config| config.steam_launch_options.clone())
+                        .unwrap_or_default();
+                } else if mode == ManageMode::SteamTool {
+                    manage.prompt = manage
+                        .config
+                        .as_ref()
+                        .and_then(|config| config.steam_compat_tool.clone())
+                        .unwrap_or_default();
                 }
             }
             return;
         }
         match index {
-            8 => {
+            10 => {
                 self.manage = None;
                 self.job_selected("verify", vec!["verify".into()]);
             }
-            9 => {
+            11 => {
                 self.manage = None;
                 self.job_selected("update", vec!["update".into()]);
             }
-            10 => {
+            12 => {
                 self.manage = None;
                 self.job_selected("cloud sync", vec!["cloud".into(), "sync".into()]);
             }
-            11 => {
+            13 => {
                 if let Some(manage) = self.manage.take() {
                     self.confirm = Some(Confirm {
                         prompt: format!("Uninstall {}?", manage.game.name),
@@ -1306,6 +1348,35 @@ impl App {
             manage.mode = ManageMode::Main;
             manage.sel = 0;
             manage.status = Some("Saving…".to_string());
+        }
+    }
+
+    fn manage_save_steam(&mut self, launch: bool) {
+        let Some(manage) = &self.manage else {
+            return;
+        };
+        let app_id = manage.game.app_id;
+        let value = manage.prompt.trim().to_string();
+        let mut args = vec!["config".into(), "game".into(), app_id.to_string()];
+        if launch {
+            if value.is_empty() {
+                args.push("--clear-steam-launch-options".into());
+            } else {
+                args.push("--steam-launch-options".into());
+                args.push(value);
+            }
+        } else if value.is_empty() {
+            args.push("--clear-steam-compat-tool".into());
+        } else {
+            args.push("--steam-compat-tool".into());
+            args.push(value);
+        }
+        args.push("--restart-steam".into());
+        self.save_manage(app_id, "Steam settings saved".to_string(), args);
+        if let Some(manage) = &mut self.manage {
+            manage.mode = ManageMode::Main;
+            manage.sel = 0;
+            manage.status = Some("Saving Steam settings…".to_string());
         }
     }
 

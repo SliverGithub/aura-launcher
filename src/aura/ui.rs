@@ -1626,6 +1626,39 @@ fn draw_manage(frame: &mut Frame, app: &App, manage: &Manage, area: Rect) {
                 chunks[1],
             );
         }
+        ManageMode::SteamLaunch | ManageMode::SteamTool => {
+            let (title, hint) = if manage.mode == ManageMode::SteamLaunch {
+                (
+                    "Steam launch options",
+                    "Enter saves to Steam. Leave empty to clear them.",
+                )
+            } else {
+                (
+                    "Steam compatibility tool",
+                    "Raw Steam tool name, e.g. proton_10. Empty clears the mapping.",
+                )
+            };
+            let text = vec![
+                Line::from(Span::styled(title, Style::default().fg(ACCENT))),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("{}█", manage.prompt),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(hint, Style::default().fg(DIM))),
+                Line::from(Span::styled(
+                    "This writes Steam's files and restarts Steam if it is running.",
+                    Style::default().fg(DIM),
+                )),
+            ];
+            frame.render_widget(
+                Paragraph::new(Text::from(text))
+                    .block(block(" Steam settings "))
+                    .wrap(Wrap { trim: false }),
+                chunks[1],
+            );
+        }
         ManageMode::LaunchOptions => {
             let mut lines = Vec::new();
             if let Some(options) = manage
@@ -1671,6 +1704,9 @@ fn draw_manage(frame: &mut Frame, app: &App, manage: &Manage, area: Rect) {
     let status = manage.status.clone().unwrap_or_else(|| match manage.mode {
         ManageMode::Main => "Enter: change · Esc: close · r: refresh".to_string(),
         ManageMode::Script => "Enter: save · Esc: cancel".to_string(),
+        ManageMode::SteamLaunch | ManageMode::SteamTool => {
+            "Enter: save to Steam · Esc: cancel".to_string()
+        }
         ManageMode::LaunchOptions => "PgUp/PgDn: scroll · Esc: back".to_string(),
         _ => "Enter: apply · Esc: back".to_string(),
     });
@@ -1682,7 +1718,7 @@ fn draw_manage(frame: &mut Frame, app: &App, manage: &Manage, area: Rect) {
         )));
     } else {
         footer.push(Line::from(Span::styled(
-            "Per-game settings are stored by Aurelia; the global defaults stay untouched.",
+            "Aura settings are local; Steam launch/tool writes update Steam and may restart it.",
             Style::default().fg(DIM),
         )));
     }
@@ -1740,6 +1776,12 @@ fn manage_main_items(manage: &Manage) -> Vec<ListItem<'static>> {
         .active_branch
         .clone()
         .unwrap_or_else(|| "public".to_string());
+    let steam_launch = config
+        .and_then(|config| config.steam_launch_options.clone())
+        .unwrap_or_else(|| "(none)".to_string());
+    let steam_tool = config
+        .and_then(|config| config.steam_compat_tool.clone())
+        .unwrap_or_else(|| "(Steam default)".to_string());
 
     let rows = [
         ("Proton runtime", proton),
@@ -1750,6 +1792,8 @@ fn manage_main_items(manage: &Manage) -> Vec<ListItem<'static>> {
         ("Launch script", script),
         ("Beta branch", branch),
         ("Launch options", "view".to_string()),
+        ("Steam launch", truncate(&steam_launch, 46)),
+        ("Steam tool", steam_tool),
         ("Verify files", "integrity scan".to_string()),
         ("Update", "download latest".to_string()),
         ("Cloud sync", "sync save games".to_string()),

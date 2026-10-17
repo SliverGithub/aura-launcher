@@ -125,7 +125,7 @@ async fn locate_localconfig(root: &Path) -> Option<PathBuf> {
 
 /// Resolve the 32-bit account id of the `MostRecent` user from
 /// `config/loginusers.vdf`.
-async fn most_recent_account_id(root: &Path) -> Option<u32> {
+pub async fn most_recent_account_id(root: &Path) -> Option<u32> {
     let path = root.join("config/loginusers.vdf");
     let text = tokio::fs::read_to_string(&path).await.ok()?;
 

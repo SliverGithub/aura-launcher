@@ -126,7 +126,11 @@ pub(crate) async fn cmd_config_experimental(enabled: Option<bool>, json: bool) -
     } else {
         cli_println!(
             "Experimental features: {}",
-            if config.experimental { "enabled" } else { "disabled" }
+            if config.experimental {
+                "enabled"
+            } else {
+                "disabled"
+            }
         );
         if env_override && !config.experimental {
             cli_println!("(AURELIA_EXPERIMENTAL is set — enabled for this run regardless)");
@@ -173,7 +177,9 @@ pub(crate) async fn cmd_config_proxy(
     }
 
     if changed {
-        save_launcher_config(&config).await.context("failed saving proxy config")?;
+        save_launcher_config(&config)
+            .await
+            .context("failed saving proxy config")?;
     }
 
     if json {
@@ -276,7 +282,8 @@ pub(crate) async fn cmd_config_steam_runtime_policy(
 ) -> Result<()> {
     use aurelia::core::models::SteamRuntimePolicy;
 
-    let (config, changed) = view_or_set(policy, |c, arg| c.steam_runtime_policy = arg.into()).await?;
+    let (config, changed) =
+        view_or_set(policy, |c, arg| c.steam_runtime_policy = arg.into()).await?;
 
     let label = match config.steam_runtime_policy {
         SteamRuntimePolicy::Auto => {
@@ -302,7 +309,8 @@ pub(crate) async fn cmd_config_steam_runtime_policy(
 /// Shares discovery with `proton list --installed` (no hardcoded placeholders).
 pub(crate) async fn cmd_config_protons(json: bool) -> Result<()> {
     let cfg = load_launcher_config().await?;
-    let installed = aurelia::compat::proton::list_installed(std::path::Path::new(&cfg.steam_library_path));
+    let installed =
+        aurelia::compat::proton::list_installed(std::path::Path::new(&cfg.steam_library_path));
     let steam: Vec<&str> = installed
         .iter()
         .filter(|i| i.location == "steam")
@@ -325,7 +333,9 @@ pub(crate) async fn cmd_config_protons(json: bool) -> Result<()> {
 
     if installed.is_empty() {
         cli_println!("No Proton/Wine runtimes installed.");
-        cli_println!("Install one with `aurelia proton install <NAME>` (see `aurelia proton list`).");
+        cli_println!(
+            "Install one with `aurelia proton install <NAME>` (see `aurelia proton list`)."
+        );
         return Ok(());
     }
     if !steam.is_empty() {
@@ -408,6 +418,11 @@ pub(crate) async fn cmd_config_game(args: GameConfigArgs, json: bool) -> Result<
         no_launch_script,
         steam_runtime,
         steam_prefix_mode,
+        steam_launch_options,
+        clear_steam_launch_options,
+        steam_compat_tool,
+        clear_steam_compat_tool,
+        restart_steam,
     } = args;
     use aurelia::core::config::GameRunner;
     use aurelia::core::models::{SteamPrefixMode, SteamRuntimePolicy};
@@ -436,6 +451,28 @@ pub(crate) async fn cmd_config_game(args: GameConfigArgs, json: bool) -> Result<
     }
 
     let mut cfg = load_launcher_config().await?;
+
+    let steam_root = std::path::PathBuf::from(&cfg.steam_library_path);
+    let launch_change = if clear_steam_launch_options {
+        Some(String::new())
+    } else {
+        steam_launch_options
+    };
+    let compat_change = if clear_steam_compat_tool {
+        Some(None)
+    } else {
+        steam_compat_tool.map(|tool| {
+            let tool = tool.trim().to_string();
+            (!tool.is_empty()).then_some(tool)
+        })
+    };
+    let steam_write = launch_change.is_some() || compat_change.is_some();
+    let steam_managed = if steam_write {
+        steam_guard_stop(restart_steam, json)?
+    } else {
+        false
+    };
+
     let mut changed = false;
     if clear {
         changed = cfg.game_configs.remove(&app_id).is_some();
@@ -485,6 +522,28 @@ pub(crate) async fn cmd_config_game(args: GameConfigArgs, json: bool) -> Result<
     if changed {
         cfg.save().await.context("failed saving game config")?;
     }
+
+    let steam_result: Result<()> = async {
+        if let Some(value) = &launch_change {
+            aurelia::library::steam_settings::write_launch_options(&steam_root, app_id, value)
+                .await?;
+        }
+        if let Some(tool) = &compat_change {
+            aurelia::library::steam_settings::write_compat_tool(
+                &steam_root,
+                app_id,
+                tool.as_deref(),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+    .await;
+    steam_guard_restart(steam_managed, json)?;
+    steam_result?;
+    let steam = aurelia::library::steam_settings::read(&steam_root, app_id)
+        .await
+        .unwrap_or_default();
 
     let entry = cfg.game_configs.get(&app_id).cloned().unwrap_or_default();
     let ua = user_configs.get(&app_id).cloned().unwrap_or_default();
@@ -538,26 +597,45 @@ pub(crate) async fn cmd_config_game(args: GameConfigArgs, json: bool) -> Result<
             "launch_script": entry.launch_script,
             "steam_runtime_policy": ua.steam_runtime_policy,
             "steam_prefix_mode": ua.steam_prefix_mode,
+            "steam_launch_options": steam.launch_options,
+            "steam_compat_tool": steam.compat_tool,
         }));
     } else {
         cli_println!("App {app_id}:");
         let proton_default = format!("(global default: {})", cfg.proton_version);
         cli_println!(
             "  Proton       : {}",
-            entry.forced_proton_version.as_deref().unwrap_or(&proton_default)
+            entry
+                .forced_proton_version
+                .as_deref()
+                .unwrap_or(&proton_default)
         );
         let platform_auto = format!("(auto: {platform_resolved})");
         cli_println!(
             "  Platform     : {}",
-            entry.platform_preference.as_deref().unwrap_or(&platform_auto)
+            entry
+                .platform_preference
+                .as_deref()
+                .unwrap_or(&platform_auto)
         );
         cli_println!("  Runner       : {runner_label}");
         cli_println!(
             "  Script       : {}",
-            entry.launch_script.as_deref().unwrap_or("(auto-detected / none)")
+            entry
+                .launch_script
+                .as_deref()
+                .unwrap_or("(auto-detected / none)")
         );
         cli_println!("  Steam runtime: {steam_runtime_label}");
         cli_println!("  Prefix mode  : {prefix_mode_label}");
+        cli_println!(
+            "  Steam launch : {}",
+            steam.launch_options.as_deref().unwrap_or("(none)")
+        );
+        cli_println!(
+            "  Steam tool   : {}",
+            steam.compat_tool.as_deref().unwrap_or("(Steam default)")
+        );
     }
     Ok(())
 }

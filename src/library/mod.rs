@@ -1,4 +1,5 @@
 pub mod local_library;
+pub mod steam_settings;
 pub mod collections;
 pub mod depot_browser;
 pub mod relocate;
