@@ -504,6 +504,13 @@ impl SteamClient {
                 response.eresult()
             );
         }
+        if response.granted_appids.is_empty() && response.granted_packageids.is_empty() {
+            bail!(
+                "Steam did not grant a free license for {:?}. The app is probably paid, \
+                 already owned, or not currently offered as a free license.",
+                app_ids
+            );
+        }
         Ok((
             response.granted_appids.to_vec(),
             response.granted_packageids.to_vec(),

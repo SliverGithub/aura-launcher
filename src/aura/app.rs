@@ -1867,10 +1867,21 @@ impl App {
                 'v' => self.load_store(StoreView::Wishlist),
                 'f' => {
                     if let Some(row) = self.selected_store_row() {
-                        self.confirm = Some(Confirm {
-                            prompt: format!("Add the free license for {}?", row.name()),
-                            action: ConfirmAction::AddFreeLicense(row.app_id),
-                        });
+                        if !row.is_free && row.discount_pct < 100 {
+                            self.notice = Some(format!(
+                                "{} is not free{} — open the store page to buy it",
+                                row.name(),
+                                row.price
+                                    .as_deref()
+                                    .map(|price| format!(" ({price})"))
+                                    .unwrap_or_default()
+                            ));
+                        } else {
+                            self.confirm = Some(Confirm {
+                                prompt: format!("Add the free license for {}?", row.name()),
+                                action: ConfirmAction::AddFreeLicense(row.app_id),
+                            });
+                        }
                     }
                 }
                 'i' => self.confirm_install_store(),
