@@ -91,7 +91,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             "Enter play/install · i install · u update · v verify · x uninstall · S stop · c cloud · m manage · g store · a achievements · w workshop · d DLC · s store search · f installed · / filter · r reload · ? help · q quit"
         }
         Screen::Store => {
-            "d deals · v wishlist · / search · Enter store page · i install · a add wishlist · x remove wishlist · o open browser · r reload · l login · ? help · q quit"
+            "d deals · v wishlist · / search · Enter store page · i install · f add free license · a wishlist · x remove · o browser · r reload · ? help · q quit"
         }
         Screen::Community => {
             "Enter chat · i type · Esc close chat · v profile · m my profile · a add friend · x remove friend · o open profile · r reload · / filter · l login · ? help · q quit"
@@ -1933,7 +1933,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
             Style::default().fg(DIM),
         )),
         Line::from(Span::styled(
-            "Store:   d deals · v wishlist · a add · x remove · o open browser",
+            "Store:   d deals · v wishlist · f add free license · a add · x remove · o browser",
             Style::default().fg(DIM),
         )),
         Line::from(Span::styled(

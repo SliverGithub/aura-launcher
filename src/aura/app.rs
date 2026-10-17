@@ -246,6 +246,7 @@ pub enum ConfirmAction {
     StopInstall(u32),
     AddWishlist(u32),
     RemoveWishlist(u32),
+    AddFreeLicense(u32),
 }
 
 pub enum Msg {
@@ -266,6 +267,7 @@ pub enum Msg {
     Config(Result<Value>),
     MarketListings(Result<MarketState>),
     MarketSearch(bool, Result<MarketSearchPage>),
+    FreeLicense(u32, Result<Value>),
     Inventory(Result<Vec<InventoryItem>>),
     MarketPrice(String, Result<Value>),
     Wallet(Result<Value>),
@@ -1863,6 +1865,14 @@ impl App {
                 }
                 'd' => self.load_store(StoreView::Deals),
                 'v' => self.load_store(StoreView::Wishlist),
+                'f' => {
+                    if let Some(row) = self.selected_store_row() {
+                        self.confirm = Some(Confirm {
+                            prompt: format!("Add the free license for {}?", row.name()),
+                            action: ConfirmAction::AddFreeLicense(row.app_id),
+                        });
+                    }
+                }
                 'i' => self.confirm_install_store(),
                 'a' => {
                     if let Some(row) = self.selected_store_row() {
@@ -2306,6 +2316,13 @@ impl App {
                     },
                 );
             }
+            ConfirmAction::AddFreeLicense(app_id) => {
+                self.spawn_json(
+                    "adding free license",
+                    vec!["free".into(), app_id.to_string()],
+                    move |v| Msg::FreeLicense(app_id, v),
+                );
+            }
         }
     }
 
@@ -2586,6 +2603,16 @@ impl App {
                         self.market_start = start.saturating_add(received as u32);
                         self.market_view = MarketView::Search;
                         self.maybe_load_more_market_results();
+                    }
+                    Err(error) => self.error = Some(format!("{error:#}")),
+                }
+            }
+            Msg::FreeLicense(app_id, result) => {
+                self.loading = None;
+                match result {
+                    Ok(_) => {
+                        self.notice = Some(format!("Added the free license for app {app_id}"));
+                        self.refresh_library();
                     }
                     Err(error) => self.error = Some(format!("{error:#}")),
                 }

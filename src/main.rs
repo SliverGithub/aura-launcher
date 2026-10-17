@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 
 #[macro_use]
@@ -127,7 +127,11 @@ fn must_run_locally(cli: &Cli) -> bool {
         || terminal_ui
         || matches!(
             cli.command,
-            Command::Kill | Command::Daemon { command: Some(_), .. }
+            Command::Kill
+                | Command::Daemon {
+                    command: Some(_),
+                    ..
+                }
         )
 }
 
@@ -140,8 +144,7 @@ async fn async_main() {
             // help — instead of clap's terse "requires a subcommand" error.
             if matches!(
                 e.kind(),
-                ErrorKind::MissingSubcommand
-                    | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                ErrorKind::MissingSubcommand | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
             ) {
                 print_banner_and_help();
                 std::process::exit(0);
@@ -156,7 +159,11 @@ async fn async_main() {
     aurelia::infra::logging::init_cli_logging(cli.verbose);
 
     // Bare `aurelia daemon`: become the shared-session server. Never forwards.
-    if let Command::Daemon { socket, command: None } = &cli.command {
+    if let Command::Daemon {
+        socket,
+        command: None,
+    } = &cli.command
+    {
         if let Some(path) = socket {
             // SAFETY: single-threaded at this point (set before any worker spawns).
             unsafe { std::env::set_var("AURELIA_DAEMON_SOCKET", path) };
@@ -310,9 +317,7 @@ async fn run(cli: Cli) -> Result<()> {
             ChatCommand::Send { steamid, message } => {
                 cmd_chat_send(steamid, message.join(" "), json).await
             }
-            ChatCommand::History { steamid, count } => {
-                cmd_chat_history(steamid, count, json).await
-            }
+            ChatCommand::History { steamid, count } => cmd_chat_history(steamid, count, json).await,
             ChatCommand::Open { steamid } => cmd_chat_open(steamid, json).await,
         },
         Command::Inventory {
@@ -396,7 +401,21 @@ async fn run(cli: Cli) -> Result<()> {
             no_script,
             steam,
             no_update,
-        } => cmd_play(app_id, proton, windows, native_engine, umu, script, no_script, steam, no_update, json).await,
+        } => {
+            cmd_play(
+                app_id,
+                proton,
+                windows,
+                native_engine,
+                umu,
+                script,
+                no_script,
+                steam,
+                no_update,
+                json,
+            )
+            .await
+        }
         Command::Running => cmd_running(json),
         Command::Stop { app_id, force } => cmd_stop(app_id, force, json).await,
         Command::Enable {
@@ -422,6 +441,7 @@ async fn run(cli: Cli) -> Result<()> {
             country,
             lang,
         } => cmd_price(app_id, compare, country, lang, json).await,
+        Command::Free { app_id } => cmd_free(app_id, json).await,
         Command::Search {
             term,
             count,
@@ -470,7 +490,19 @@ async fn run(cli: Cli) -> Result<()> {
             count,
             cursor,
             lang,
-        } => cmd_reviews(app_id, filter, review_type, purchase, count, cursor, lang, json).await,
+        } => {
+            cmd_reviews(
+                app_id,
+                filter,
+                review_type,
+                purchase,
+                count,
+                cursor,
+                lang,
+                json,
+            )
+            .await
+        }
         Command::Dlc { app_id } => cmd_dlc(app_id, json).await,
         Command::Achievements { app_id, lang } => cmd_achievements(app_id, lang, json).await,
         Command::Depots { app_id } => cmd_depots(app_id, json).await,
@@ -496,18 +528,18 @@ async fn run(cli: Cli) -> Result<()> {
             ConfigCommand::Presence { mode } => cmd_config_presence(mode, json).await,
             ConfigCommand::Language { lang } => cmd_config_language(lang, json).await,
             ConfigCommand::Country { country } => cmd_config_country(country, json).await,
-            ConfigCommand::Experimental { enabled } => {
-                cmd_config_experimental(enabled, json).await
-            }
+            ConfigCommand::Experimental { enabled } => cmd_config_experimental(enabled, json).await,
             ConfigCommand::SteamRuntimePolicy { policy } => {
                 cmd_config_steam_runtime_policy(policy, json).await
             }
             ConfigCommand::SteamRuntimeRunner { runner } => {
                 cmd_config_steam_runtime_runner(runner, json).await
             }
-            ConfigCommand::Proxy { url, no_proxy, clear } => {
-                cmd_config_proxy(url, no_proxy, clear, json).await
-            }
+            ConfigCommand::Proxy {
+                url,
+                no_proxy,
+                clear,
+            } => cmd_config_proxy(url, no_proxy, clear, json).await,
             ConfigCommand::Game { args } => cmd_config_game(args, json).await,
             ConfigCommand::ClearGames { yes } => cmd_config_clear_games(yes, json).await,
         },

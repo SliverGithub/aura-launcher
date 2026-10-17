@@ -159,7 +159,12 @@ impl WebSession {
             };
             pairs.retain(|existing| !existing.starts_with(&format!("{name}=")));
             pairs.push(pair.to_string());
-            tracing::debug!(cookie = name, "market eligibility set cookie");
+            if name == "sessionid"
+                && let Some((_, value)) = pair.split_once('=')
+            {
+                self.sessionid = value.to_string();
+            }
+            tracing::debug!(cookie = name, "web session set cookie");
         }
         self.cookie = pairs.join("; ");
     }

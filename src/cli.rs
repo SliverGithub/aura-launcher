@@ -156,6 +156,8 @@ pub(crate) enum Command {
         #[arg(short = 'l', long = "lang", alias = "language")]
         lang: Option<String>,
     },
+    /// Add a free store license (free-to-play, free weekend, or 100% off).
+    Free { app_id: u32 },
     /// Search the store by title.
     Search {
         term: String,
