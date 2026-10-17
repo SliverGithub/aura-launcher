@@ -364,7 +364,10 @@ pub async fn my_listings_via(web: &WebSession) -> Result<MyMarketState> {
 
 /// Fetch the account's Steam Wallet balance over an existing web session.
 pub async fn wallet_via(web: &WebSession) -> Result<WalletBalance> {
-    let body = web.get_text("https://steamcommunity.com/market/").await?;
+    let mut web = web.clone();
+    let body = web
+        .get_market_text("https://steamcommunity.com/market/")
+        .await?;
     parse_wallet(&body)
 }
 

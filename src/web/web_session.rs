@@ -10,11 +10,10 @@
 //! store, so no extra crate feature is needed for the two values we manage.
 
 use crate::core::error::{ErrorKind, TypedError};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// CDN base for economy item icons (`icon_url` values are relative to this).
-pub const ECON_IMAGE_BASE: &str =
-    "https://community.cloudflare.steamstatic.com/economy/image/";
+pub const ECON_IMAGE_BASE: &str = "https://community.cloudflare.steamstatic.com/economy/image/";
 
 /// An authenticated Steam web session: a `reqwest` client plus the cookies Steam's
 /// web endpoints require.
@@ -76,9 +75,93 @@ impl WebSession {
     /// common failure modes (rate limiting, an expired/invalid session) to clear,
     /// actionable errors.
     pub async fn get_text(&self, url: &str) -> Result<String> {
-        let request = self.http.get(url).header(reqwest::header::COOKIE, &self.cookie);
-        let resp = crate::core::net::send_with_retry(&self.http, request).await?;
-        read_checked(resp).await
+        let response = self.get_response(url).await?;
+        read_checked(response).await
+    }
+
+    /// Like [`get_text`], but completes the market eligibility redirect and keeps
+    /// the cookies it sets. Steam sends even eligible accounts through
+    /// `/market/eligibilitycheck/` to establish `webTradeEligibility`; without
+    /// following that, the wallet page looks like an ineligible new account.
+    pub async fn get_market_text(&mut self, url: &str) -> Result<String> {
+        for _ in 0..4 {
+            let response = self.get_response(url).await?;
+            if !response.status().is_redirection() {
+                return read_checked(response).await;
+            }
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("(unknown)")
+                .to_string();
+            tracing::debug!(status = %response.status(), %location, "steam market redirect");
+            self.capture_cookies(&response);
+            if location.contains("/login") {
+                bail!(
+                    "the Steam web session was rejected (redirected to login). Run \
+                     `aurelia login --reconnect`."
+                );
+            }
+            let eligibility = if location.starts_with("http") {
+                location
+            } else {
+                format!("https://steamcommunity.com{location}")
+            };
+            let check = self.get_response(&eligibility).await?;
+            self.capture_cookies(&check);
+            tracing::debug!(
+                status = %check.status(),
+                location = ?check.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()),
+                "steam market eligibility check"
+            );
+            if check.status().is_redirection()
+                && let Some(next) = check
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+            {
+                let next = if next.starts_with("http") {
+                    next.to_string()
+                } else {
+                    format!("https://steamcommunity.com{next}")
+                };
+                let follow = self.get_response(&next).await?;
+                self.capture_cookies(&follow);
+            }
+        }
+        bail!("too many redirects while opening the Steam market")
+    }
+
+    async fn get_response(&self, url: &str) -> Result<reqwest::Response> {
+        let request = self
+            .http
+            .get(url)
+            .header(reqwest::header::COOKIE, &self.cookie);
+        crate::core::net::send_with_retry(&self.http, request).await
+    }
+
+    fn capture_cookies(&mut self, response: &reqwest::Response) {
+        let mut pairs: Vec<String> = self
+            .cookie
+            .split(';')
+            .map(str::trim)
+            .filter(|pair| !pair.is_empty())
+            .map(ToString::to_string)
+            .collect();
+        for header in response.headers().get_all(reqwest::header::SET_COOKIE) {
+            let Ok(raw) = header.to_str() else {
+                continue;
+            };
+            let pair = raw.split(';').next().unwrap_or(raw).trim();
+            let Some((name, _)) = pair.split_once('=') else {
+                continue;
+            };
+            pairs.retain(|existing| !existing.starts_with(&format!("{name}=")));
+            pairs.push(pair.to_string());
+            tracing::debug!(cookie = name, "market eligibility set cookie");
+        }
+        self.cookie = pairs.join("; ");
     }
 }
 
@@ -110,6 +193,7 @@ async fn read_checked(resp: reqwest::Response) -> Result<String> {
             .get(reqwest::header::LOCATION)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("(unknown)");
+        tracing::debug!(status = %status, %location, "steam web redirect");
         // Steam redirects authenticated-but-ineligible accounts to an eligibility
         // check; an actually-rejected session goes to the login page. Distinguish them.
         if location.contains("eligibilitycheck") {
@@ -130,12 +214,16 @@ async fn read_checked(resp: reqwest::Response) -> Result<String> {
             status.as_u16()
         );
     }
-    resp.text().await.context("failed reading the response body")
+    resp.text()
+        .await
+        .context("failed reading the response body")
 }
 
 /// A random 24-hex-character `sessionid` token.
 fn random_sessionid() -> String {
     use rand::RngExt;
     let mut rng = rand::rng();
-    (0..24).map(|_| char::from_digit(rng.random_range(0..16), 16).unwrap()).collect()
+    (0..24)
+        .map(|_| char::from_digit(rng.random_range(0..16), 16).unwrap())
+        .collect()
 }
