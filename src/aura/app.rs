@@ -1,6 +1,6 @@
 //! TUI state, key handling, and background requests to Aurelia.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -265,7 +265,7 @@ pub enum Msg {
     Dlc(u32, Result<Value>),
     Config(Result<Value>),
     MarketListings(Result<MarketState>),
-    MarketSearch(Result<MarketSearchPage>),
+    MarketSearch(bool, Result<MarketSearchPage>),
     Inventory(Result<Vec<InventoryItem>>),
     MarketPrice(String, Result<Value>),
     Wallet(Result<Value>),
@@ -340,6 +340,8 @@ pub struct App {
     pub market_query: String,
     pub market_start: u32,
     pub market_total: u32,
+    pub market_loading: bool,
+    pub market_list_height: Cell<u16>,
     pub market_app_id: Option<u32>,
     pub market_price: Option<Value>,
     pub wallet: Option<Value>,
@@ -412,6 +414,8 @@ impl App {
             market_query: String::new(),
             market_start: 0,
             market_total: 0,
+            market_loading: false,
+            market_list_height: Cell::new(0),
             market_app_id: None,
             market_price: None,
             wallet: None,
@@ -458,6 +462,9 @@ impl App {
         self.tick = self.tick.wrapping_add(1);
         self.clamp_selection();
         self.sync_image();
+        if self.screen == Screen::Market && self.market_view == MarketView::Search {
+            self.maybe_load_more_market_results();
+        }
         if self.screen == Screen::Community
             && self.chat.is_none()
             && let Some((steam_id, wait)) = self.profile_pending
@@ -866,44 +873,57 @@ impl App {
 
     fn start_market_search(&mut self) {
         *self.market_list.borrow_mut() = ListState::default();
+        self.market_view = MarketView::Search;
+        self.market_start = 0;
+        self.market_total = 0;
+        self.market_sel = 0;
+        self.detail_scroll = 0;
+        self.market_rows.clear();
+        self.fetch_market_search(true);
+    }
+
+    fn market_batch_size(&self) -> usize {
+        let height = self.market_list_height.get() as usize;
+        if height == 0 {
+            30
+        } else {
+            height.clamp(10, 80)
+        }
+    }
+
+    fn fetch_market_search(&mut self, replace: bool) {
+        if self.market_loading {
+            return;
+        }
+        self.market_loading = true;
+        let start = self.market_start;
+        let count = self.market_batch_size();
         let query = self.market_query.trim().to_string();
         let mut args = vec!["market".to_string(), "search".to_string()];
         if !query.is_empty() {
             args.push(query);
         }
         args.push("-n".to_string());
-        args.push("10".to_string());
+        args.push(count.to_string());
         args.push("--start".to_string());
-        args.push(self.market_start.to_string());
+        args.push(start.to_string());
         self.market_view = MarketView::Search;
-        self.market_sel = 0;
-        self.spawn_json("searching market", args, |v| {
-            Msg::MarketSearch(v.and_then(deserialize::<MarketSearchPage>))
+        self.spawn_json("searching market", args, move |value| {
+            Msg::MarketSearch(replace, value.and_then(deserialize::<MarketSearchPage>))
         });
     }
 
-    fn market_next_page(&mut self) {
-        if self.market_view != MarketView::Search {
+    fn maybe_load_more_market_results(&mut self) {
+        if self.market_view != MarketView::Search
+            || self.market_loading
+            || self.market_start == 0
+            || self.market_start >= self.market_total
+        {
             return;
         }
-        if self.market_start.saturating_add(10) >= self.market_total {
-            self.notice = Some("Already on the last page".to_string());
-            return;
+        if self.market_sel.saturating_add(4) >= self.market_rows.len() {
+            self.fetch_market_search(false);
         }
-        self.market_start += 10;
-        self.start_market_search();
-    }
-
-    fn market_previous_page(&mut self) {
-        if self.market_view != MarketView::Search {
-            return;
-        }
-        if self.market_start < 10 {
-            self.notice = Some("Already on the first page".to_string());
-            return;
-        }
-        self.market_start -= 10;
-        self.start_market_search();
     }
 
     fn load_market_price(&mut self, app_id: u32, name: String) {
@@ -1443,6 +1463,7 @@ impl App {
             index = (index + delta).clamp(0, (len - 1) as isize);
             if !matches!(self.market_rows[index as usize], MarketRow::Header(_)) {
                 self.market_sel = index as usize;
+                self.maybe_load_more_market_results();
                 return;
             }
             if (index == 0 && delta < 0) || (index == (len - 1) as isize && delta > 0) {
@@ -1918,8 +1939,6 @@ impl App {
                     self.prompt.clear();
                     self.input = Input::InventoryApp;
                 }
-                '[' => self.market_previous_page(),
-                ']' => self.market_next_page(),
                 'o' => {
                     if let Some(row) = self.selected_market_row() {
                         let query = row.title().replace(' ', "+");
@@ -2538,16 +2557,24 @@ impl App {
                     Err(error) => self.error = Some(format!("{error:#}")),
                 }
             }
-            Msg::MarketSearch(result) => {
+            Msg::MarketSearch(replace, result) => {
                 self.loading = None;
+                self.market_loading = false;
                 match result {
                     Ok(page) => {
+                        if replace {
+                            self.market_rows.clear();
+                            self.market_sel = 0;
+                            self.detail_scroll = 0;
+                        }
+                        let received = page.results.len();
+                        let start = page.start;
+                        self.market_rows
+                            .extend(page.results.into_iter().map(MarketRow::Item));
                         self.market_total = page.total_count;
-                        self.market_start = page.start;
-                        self.market_rows = page.results.into_iter().map(MarketRow::Item).collect();
+                        self.market_start = start.saturating_add(received as u32);
                         self.market_view = MarketView::Search;
-                        self.market_sel = 0;
-                        self.detail_scroll = 0;
+                        self.maybe_load_more_market_results();
                     }
                     Err(error) => self.error = Some(format!("{error:#}")),
                 }

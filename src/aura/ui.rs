@@ -97,7 +97,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             "Enter chat · i type · Esc close chat · v profile · m my profile · a add friend · x remove friend · o open profile · r reload · / filter · l login · ? help · q quit"
         }
         Screen::Market => {
-            "v listings · / search · i all inventory · I one game · [ ] pages · w wallet · Enter price · o open · r reload · ? help"
+            "v listings · / search · i all inventory · I one game · w wallet · Enter price · o open · r reload · ? help"
         }
         Screen::Downloads => {
             "x stop selected · c clear finished · g go to game · r refresh installs · 1-6 tabs · ? help · q quit"
@@ -875,6 +875,8 @@ fn draw_market(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(area);
 
+    app.market_list_height
+        .set(panes[0].height.saturating_sub(2));
     let mut items = Vec::new();
     for row in &app.market_rows {
         if let MarketRow::Header(title) = row {
@@ -919,12 +921,20 @@ fn draw_market(frame: &mut Frame, app: &App, area: Rect) {
         );
     }
     let title = if app.market_view == MarketView::Search {
-        let pages = app.market_total.div_ceil(10).max(1);
-        let page = (app.market_start / 10) + 1;
-        format!(
-            " Market · Search ({} results · page {}/{}) ",
-            app.market_total, page, pages
-        )
+        if app.market_total > 0 {
+            format!(
+                " Market · Search ({} results · {} loaded{}) ",
+                app.market_total,
+                app.market_rows.len(),
+                if app.market_loading {
+                    " · loading"
+                } else {
+                    ""
+                }
+            )
+        } else {
+            " Market · Search ".to_string()
+        }
     } else {
         format!(
             " Market · {} ({}) ",
@@ -1026,7 +1036,7 @@ fn draw_market(frame: &mut Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Enter: price · [ ]: page · /: search · i: all inventory · I: one game · o: open",
+            "Enter: price · /: search · i: all inventory · I: one game · o: open · scroll for more",
             Style::default().fg(DIM),
         )));
     } else {
@@ -1931,7 +1941,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
             Style::default().fg(DIM),
         )),
         Line::from(Span::styled(
-            "Market:  v listings · / search · i all inventory · I one game · [ ] pages · w wallet · Enter price",
+            "Market:  v listings · / search · i all inventory · I one game · w wallet · Enter price",
             Style::default().fg(DIM),
         )),
         Line::from(Span::styled(

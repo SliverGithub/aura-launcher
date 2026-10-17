@@ -426,8 +426,41 @@ pub async fn market_price(
 }
 
 /// Search the Community Market. Public — no session required. Returns
-/// `(total_count, page_of_results)`.
+/// `(total_count, results)`. Steam caps a single request at 10 results, so this
+/// transparently requests additional chunks until `count` is reached (or the
+/// result set is exhausted).
 pub async fn market_search(
+    query: Option<&str>,
+    app_id: Option<u32>,
+    start: u32,
+    count: u32,
+) -> Result<(u32, Vec<MarketSearchResult>)> {
+    let mut results = Vec::new();
+    let mut offset = start;
+    let mut total = 0u32;
+    let mut remaining = count as usize;
+
+    while remaining > 0 {
+        let take = remaining.min(10) as u32;
+        let (page_total, page) = market_search_once(query, app_id, offset, take).await?;
+        if total == 0 {
+            total = page_total;
+        }
+        if page.is_empty() {
+            break;
+        }
+        let received = page.len();
+        results.extend(page);
+        offset = offset.saturating_add(received as u32);
+        remaining = remaining.saturating_sub(received);
+        if (total > 0 && offset >= total) || received < 10 {
+            break;
+        }
+    }
+    Ok((total, results))
+}
+
+async fn market_search_once(
     query: Option<&str>,
     app_id: Option<u32>,
     start: u32,
