@@ -1,3 +1,5 @@
+#WARNING!! THIS IS VIBECODED AND IS MEANT AS A EXPERIMENT. I DO NOT TAKE RESPONSIBILITY FOR ANY DAMAGE OR BANNED ACCOUNTS
+
 # Aura Launcher
 
 A terminal Steam client with a library, store, community/chat, market, inventory,
